@@ -60,6 +60,11 @@ func (m *Model) View() string {
 func main() {
 	events := []calendar.Event{
 		Event{
+			start: time.Now().Add(-73 * time.Hour),
+			end:   time.Now().Add(-25 * time.Hour),
+			title: "Two Days",
+		},
+		Event{
 			start: time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.Local).Add(-30 * time.Minute),
 			end:   time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.Local).Add(30 * time.Minute),
 			title: "In the middle of the night",

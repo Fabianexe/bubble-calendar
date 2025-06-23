@@ -1,6 +1,7 @@
 package calendar
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -39,15 +40,16 @@ type Event interface {
 
 type Calendar struct {
 	CurrentMode      mode
-	AllowedModes     []mode
 	Events           []Event
 	Title            string
 	ViewedDay        time.Time
 	Colors           []lipgloss.Style
 	ExternalKeybinds []key.Binding
 	WeekStartMonday  bool
+	ShowDuration     bool
 
 	internalKeybinds []key.Binding
+	allowedModes     []mode
 	width            int
 	height           int
 	help             help.Model
@@ -55,9 +57,8 @@ type Calendar struct {
 
 func New(title string, width, height int, events ...Event) *Calendar {
 	return &Calendar{
-		CurrentMode:  DayMode,
-		AllowedModes: []mode{DayMode, WeekMode},
-		ViewedDay:    time.Now(),
+		CurrentMode: DayMode,
+		ViewedDay:   time.Now(),
 		Colors: []lipgloss.Style{
 			lipgloss.NewStyle().Background(lipgloss.Color("#ff0000")).Foreground(lipgloss.Color("#000000")),
 			lipgloss.NewStyle().Background(lipgloss.Color("#00ff00")).Foreground(lipgloss.Color("#000000")),
@@ -66,10 +67,11 @@ func New(title string, width, height int, events ...Event) *Calendar {
 			lipgloss.NewStyle().Background(lipgloss.Color("#ff00ff")).Foreground(lipgloss.Color("#000000")),
 			lipgloss.NewStyle().Background(lipgloss.Color("#00ffff")).Foreground(lipgloss.Color("#000000")),
 		},
-		Events: events,
-		Title:  title,
-		width:  width,
-		height: height,
+		Events:       events,
+		Title:        title,
+		width:        width,
+		height:       height,
+		allowedModes: []mode{DayMode, WeekMode},
 		internalKeybinds: []key.Binding{
 			keyWeek: key.NewBinding(
 				key.WithKeys("up", "w"),
@@ -90,10 +92,34 @@ func New(title string, width, height int, events ...Event) *Calendar {
 		},
 		help:            help.New(),
 		WeekStartMonday: true,
+		ShowDuration:    true,
 	}
 }
 
 func (c *Calendar) Init() tea.Cmd {
+	return nil
+}
+
+func (c *Calendar) SetAllowedModes(m ...mode) error {
+	if len(m) == 0 {
+		return errors.New("at least one mode must be allowed")
+	}
+	c.allowedModes = m
+	if len(m) == 1 {
+		c.CurrentMode = m[0]
+		c.internalKeybinds[keyWeek] = key.NewBinding()
+		c.internalKeybinds[keyDay] = key.NewBinding()
+	} else {
+		c.internalKeybinds[keyWeek] = key.NewBinding(
+			key.WithKeys("up", "w"),
+			key.WithHelp("↑/w", "Week View"),
+		)
+		c.internalKeybinds[keyDay] = key.NewBinding(
+			key.WithKeys("down", "d"),
+			key.WithHelp("↓/d", "Day View"),
+		)
+	}
+
 	return nil
 }
 
@@ -146,7 +172,8 @@ func (c *Calendar) filterEvents(start, end time.Time) []Event {
 	for _, e := range c.Events {
 		startOverlap := start.Before(e.Start()) && end.After(e.Start())
 		endOverlap := start.Before(e.End()) && end.After(e.End())
-		if startOverlap || endOverlap {
+		overSpan := start.After(e.Start()) && end.Before(e.End())
+		if startOverlap || endOverlap || overSpan {
 			filtered = append(filtered, e)
 		}
 	}

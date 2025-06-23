@@ -45,17 +45,18 @@ func (c *Calendar) dayView() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
-func (c *Calendar) createDayBlock(events []Event, hour int) (string, map[string]int) {
+func (c *Calendar) createDayBlock(events []Event, hour int) (string, []*title) {
 	if len(events) == 0 {
 		return "", nil
 	}
+
 	blocks := make([]string, 0, 100)
 	// left padding
 	blocks = append(blocks, lipgloss.PlaceHorizontal(hour/2, lipgloss.Center, ""))
 	beginOfDay := time.Date(c.ViewedDay.Year(), c.ViewedDay.Month(), c.ViewedDay.Day(), 0, 0, 0, 0, c.ViewedDay.Location())
 	endOfDay := time.Date(c.ViewedDay.Year(), c.ViewedDay.Month(), c.ViewedDay.Day(), 23, 59, 59, 0, c.ViewedDay.Location())
 	colorSpinner := 1
-	titleMap := make(map[string]int, len(events))
+	tMap := make(titleMap, len(events))
 	last := beginOfDay
 	alreadyUsedSpaqce := 0
 	for _, event := range events {
@@ -67,60 +68,63 @@ func (c *Calendar) createDayBlock(events []Event, hour int) (string, map[string]
 		if end.After(endOfDay) {
 			end = endOfDay
 		}
-		currentColor := colorSpinner
-		if foundColor, ok := titleMap[event.Title()]; !ok {
-			titleMap[event.Title()] = colorSpinner
+
+		foundTitle, ok := tMap.get(event.Title())
+		if !ok {
+			foundTitle.color = colorSpinner
 			colorSpinner++
-		} else {
-			currentColor = foundColor
 		}
 
+		foundTitle.duration += end.Sub(start)
+
 		contentSize := int(float64(hour) * end.Sub(start).Hours())
-		contetntString := fmt.Sprintf("%02d", currentColor)
+		contetntString := fmt.Sprintf("%02d", foundTitle.color)
 		if lipgloss.Width(contetntString) > contentSize {
 			contetntString = ""
 		}
 		leftSpace := int(float64(hour) * start.Sub(beginOfDay).Hours())
 
 		content := lipgloss.PlaceHorizontal(contentSize, lipgloss.Center, contetntString)
-		block := c.Colors[currentColor%len(c.Colors)].Copy().PaddingLeft(leftSpace - alreadyUsedSpaqce).ColorWhitespace(false).Render(content)
+		block := c.Colors[foundTitle.color%len(c.Colors)].MarginLeft(leftSpace - alreadyUsedSpaqce).Render(content)
 		alreadyUsedSpaqce += lipgloss.Width(block)
 		blocks = append(blocks, block)
 		last = event.End()
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, blocks...), titleMap
+	return lipgloss.JoinHorizontal(lipgloss.Top, blocks...), tMap.list()
 }
 
-func (c *Calendar) createDayTitle(titleMqp map[string]int, hour int) string {
+func (c *Calendar) createDayTitle(titleList []*title, hour int) string {
 	maxlength := 0
-	ordertitle := make([]string, 0, len(titleMqp))
-	for title := range titleMqp {
-		if lipgloss.Width(title) > maxlength {
-			maxlength = lipgloss.Width(title)
+	for _, t := range titleList {
+		if c.ShowDuration {
+			t.name += fmt.Sprintf(" (%s)", t.durationString())
 		}
-		ordertitle = append(ordertitle, title)
+
+		if lipgloss.Width(t.name) > maxlength {
+			maxlength = lipgloss.Width(t.name)
+		}
 	}
 	maxlength += hour / 2
 
-	slices.SortFunc(ordertitle, func(i, j string) int {
-		if titleMqp[i] < titleMqp[j] {
+	slices.SortFunc(titleList, func(i, j *title) int {
+		if i.color < j.color {
 			return -1
 		}
-		if titleMqp[i] > titleMqp[j] {
+		if i.color > j.color {
 			return 1
 		}
 
 		return 0
 	})
 
-	titleBlocks := make([]string, 0, len(titleMqp))
+	titleBlocks := make([]string, 0, len(titleList))
 	titleBlocks = append(titleBlocks, "") // one line free
-	for _, title := range ordertitle {
-		color := titleMqp[title]
+	for _, title := range titleList {
+		color := title.color
 		titleBlocks = append(titleBlocks,
-			c.Colors[color%len(c.Colors)].Copy().PaddingLeft(hour/2).ColorWhitespace(false).Render(fmt.Sprintf("%02d", color))+
-				c.Colors[color%len(c.Colors)].Copy().PaddingLeft(hour).Render(lipgloss.PlaceHorizontal(maxlength, lipgloss.Left, title)),
+			c.Colors[color%len(c.Colors)].MarginLeft(hour/2).Render(fmt.Sprintf("%02d", color))+
+				c.Colors[color%len(c.Colors)].PaddingLeft(hour).Render(lipgloss.PlaceHorizontal(maxlength, lipgloss.Left, title.name)),
 		)
 	}
 

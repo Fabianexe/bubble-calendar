@@ -59,13 +59,13 @@ func (c *Calendar) weekView() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
-func (c *Calendar) createWeekBlock(events []Event, hour, day int, start time.Time) ([7]string, map[string]int) {
+func (c *Calendar) createWeekBlock(events []Event, hour, day int, start time.Time) ([7]string, []*title) {
 	weekBlocks := [7]string{}
 	if len(events) == 0 {
 		return weekBlocks, nil
 	}
 
-	titleMap := make(map[string]int, len(events))
+	tMap := make(titleMap, len(events))
 	colorSpinner := 1
 	eventPosition := 0
 	for i := range 7 {
@@ -96,20 +96,20 @@ func (c *Calendar) createWeekBlock(events []Event, hour, day int, start time.Tim
 				breakLoop = true
 			}
 
-			currentColor := colorSpinner
-			if foundColor, ok := titleMap[event.Title()]; !ok {
-				titleMap[event.Title()] = colorSpinner
+			foundTitle, ok := tMap.get(event.Title())
+			if !ok {
+				foundTitle.color = colorSpinner
 				colorSpinner++
-			} else {
-				currentColor = foundColor
 			}
 
+			foundTitle.duration += end.Sub(start)
+
 			contentSize := int(float64(hour) * end.Sub(start).Hours())
-			contetntString := fmt.Sprintf("%02d", currentColor)
+			contetntString := fmt.Sprintf("%02d", foundTitle.color)
 			topSpace := int(float64(hour) * start.Sub(beginOfDay).Hours())
 
 			content := lipgloss.PlaceHorizontal(day, lipgloss.Center, lipgloss.PlaceVertical(contentSize, lipgloss.Center, contetntString))
-			block := c.Colors[currentColor%len(c.Colors)].Copy().PaddingTop(topSpace - alreadyUsedLine).ColorWhitespace(false).Render(content)
+			block := c.Colors[foundTitle.color%len(c.Colors)].MarginTop(topSpace - alreadyUsedLine).Render(content)
 			alreadyUsedLine = topSpace + contentSize
 
 			blocks = append(blocks, block)
@@ -122,38 +122,47 @@ func (c *Calendar) createWeekBlock(events []Event, hour, day int, start time.Tim
 		weekBlocks[i] = lipgloss.JoinVertical(lipgloss.Left, blocks...)
 	}
 
-	return weekBlocks, titleMap
+	return weekBlocks, tMap.list()
 }
 
-func (c *Calendar) createWeekTitle(titleMqp map[string]int) string {
+func (c *Calendar) createWeekTitle(titleList []*title) string {
 	maxlength := 0
-	ordertitle := make([]string, 0, len(titleMqp))
-	for title := range titleMqp {
-		if lipgloss.Width(title) > maxlength {
-			maxlength = lipgloss.Width(title)
+	for _, t := range titleList {
+		if lipgloss.Width(t.name) > maxlength {
+			maxlength = lipgloss.Width(t.name)
 		}
-		ordertitle = append(ordertitle, title)
+		if c.ShowDuration {
+			duration := t.durationString()
+			if lipgloss.Width(duration) > maxlength {
+				maxlength = lipgloss.Width(duration)
+			}
+		}
 	}
 
-	slices.SortFunc(ordertitle, func(i, j string) int {
-		if titleMqp[i] < titleMqp[j] {
+	slices.SortFunc(titleList, func(i, j *title) int {
+		if i.color < j.color {
 			return -1
 		}
-		if titleMqp[i] > titleMqp[j] {
+		if i.color > j.color {
 			return 1
 		}
 
 		return 0
 	})
 
-	titleBlocks := make([]string, 0, len(titleMqp))
+	titleBlocks := make([]string, 0, len(titleList))
 	titleBlocks = append(titleBlocks, "") // one line free
-	for _, title := range ordertitle {
-		color := titleMqp[title]
+	for _, t := range titleList {
+		color := t.color
 		titleBlocks = append(titleBlocks,
-			c.Colors[color%len(c.Colors)].Copy().PaddingLeft(2).ColorWhitespace(false).Render(lipgloss.PlaceHorizontal(maxlength, lipgloss.Left, fmt.Sprintf("%02d", color))),
-			c.Colors[color%len(c.Colors)].Copy().PaddingLeft(2).ColorWhitespace(false).Render(lipgloss.PlaceHorizontal(maxlength, lipgloss.Left, title)),
+			c.Colors[color%len(c.Colors)].MarginLeft(2).Render(lipgloss.PlaceHorizontal(maxlength, lipgloss.Left, fmt.Sprintf("%02d", color))),
+			c.Colors[color%len(c.Colors)].MarginLeft(2).Render(lipgloss.PlaceHorizontal(maxlength, lipgloss.Left, t.name)),
 		)
+		if c.ShowDuration {
+			titleBlocks = append(titleBlocks,
+				c.Colors[color%len(c.Colors)].MarginLeft(2).Render(lipgloss.PlaceHorizontal(maxlength, lipgloss.Left, t.durationString())),
+			)
+		}
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, titleBlocks...)
